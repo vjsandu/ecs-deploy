@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Choose Terraform action to perform')
+    }
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    if (params.ACTION == 'destroy') {
+                        git branch: 'destroy', url: 'https://github.com/vjsandu/ecs-deploy.git'
+                    } else {
+                        git branch: 'main', url: 'https://github.com/vjsandu/ecs-deploy.git'
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-credentials',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                script {
+                    if (params.ACTION == 'destroy') {
+                        withCredentials([[
+                            $class: 'AmazonWebServicesCredentialsBinding',
+                            credentialsId: 'aws-credentials',
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        ]]) {
+                            sh 'terraform plan -out=destroy'
+                        }
+                    } else {
+                        withCredentials([[
+                            $class: 'AmazonWebServicesCredentialsBinding',
+                            credentialsId: 'aws-credentials',
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        ]]) {
+                            sh 'terraform plan -out=apply'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Apply/Destroy') {
+            steps {
+                script {
+                    if (params.ACTION == 'destroy') {
+                        withCredentials([[
+                            $class: 'AmazonWebServicesCredentialsBinding',
+                            credentialsId: 'aws-credentials',
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        ]]) {
+                            sh 'terraform destroy -auto-approve'
+                        }
+                    } else {
+                        withCredentials([[
+                            $class: 'AmazonWebServicesCredentialsBinding',
+                            credentialsId: 'aws-credentials',
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        ]]) {
+                            sh 'terraform apply -auto-approve'
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
